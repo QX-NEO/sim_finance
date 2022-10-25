@@ -1,7 +1,6 @@
 library(dplyr)
 
-
-# setwd("C:/Users/neo qi xiang/Desktop/sim_finance/project")
+setwd("C:/Users/neo qi xiang/Desktop/sim_finance/project")
 tesla = read.csv("TSLA.csv")
 tesla_filter <- subset(tesla, select = c('Date', 'Adj.Close'))
 tesla_filter$Date <- as.Date(tesla_filter$Date)
@@ -16,7 +15,7 @@ tesla_train <- tesla_train %>% filter(!is.na(returns))
 
 tesla_train$ln_returns <- log(tesla_train$returns)
 
-v = mean(tesla_train$ln_returns)
+v = mean(tesla_train$ln_returns)/(1/252)
 sig_2<- var(tesla_train$ln_returns)
 
 
@@ -35,7 +34,7 @@ Binomtreefit<-function(v,sigma,Deltat,approx=TRUE){
 }
 
 
-sigma=sqrt(sig_2)
+sigma= sqrt(sig_2)
 dt=1
 ApproxResult<-Binomtreefit(v,sigma,dt)
 ApproxResult
@@ -90,6 +89,7 @@ St=tesla_prices[n0]
 sim_tesla<-SimGBMsde(100,St,v,sigma,dt,1)
 Histdata<-matrix(rep(tesla_prices,100),ncol=n0,byrow=T)
 wholedata<-cbind(Histdata,sim_tesla)
+par(mar=c(1,1,1,1))
 Visualize(wholedata)
 
 SimGBMexactAV<-function(Nsim,S0,v,sigma,Deltat,T,collate=FALSE){
@@ -116,3 +116,39 @@ SimGBMexactAV<-function(Nsim,S0,v,sigma,Deltat,T,collate=FALSE){
 Nsim=100
 SimTSLAAV<-SimGBMexactAV(Nsim,St,v,sigma,dt,1,collate=TRUE)
 Visualize((SimTSLAAV))
+
+
+
+
+
+
+
+
+
+
+
+dt=1/252
+
+TESLAprices <-as.numeric(as.vector(tesla_train$Adj.Close))
+TESLAprices <- TESLAprices[!is.na(TESLAprices)]
+n0 =length(TESLAprices)
+
+TESLAlogprices <-log(TESLAprices)
+
+TESLAlogreturns <- TESLAlogprices[2:n0]- TESLAlogprices[1:(n0-1)]
+v=mean(TESLAlogreturns)/dt
+sigma=sd(TESLAlogreturns)/sqrt(dt)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
