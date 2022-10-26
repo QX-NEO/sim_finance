@@ -1,4 +1,6 @@
 ########### Preparation of tesla data
+library(dplyr)
+library(fGarch)
 
 setwd("C:/Users/neo qi xiang/Desktop/sim_finance/project")
 tesla = read.csv("TSLA.csv")
@@ -150,14 +152,6 @@ wholedataAV <-cbind(Histdata,SimTeslaAV)
 Visualize(wholedataAV)
 
 
-SimGBM1shoot<-function(Nsim,S0,v,sigma,T){
-  Z=rnorm(Nsim)
-  ST=S0*exp(v*T+sigma*sqrt(T)*Z)
-  ST
-}
-
-tmp=SimGBM1shoot(Nsim, S0, v, sigma, T)
-Visualize(tmp)
 
 
 ####### stratified sampling
@@ -185,8 +179,6 @@ SimGBM1shoot(Nsim, S0,v, sigma, T)
 
 ####### Monte Carlo
 # Parameter estimation
-library(fGarch)
-
 n=length(TESLAprices)-1
 dt=1/n
 
@@ -213,4 +205,51 @@ alpha=0.01
 VaR=-quantile(R10,probs=alpha); VaR
 
 CVaR=VaR+1/(alpha*length(R10))*sum((-R10-VaR)[-R10-VaR>0]); CVaR
+
+
+#### Suppose that we collect two-year data of DJI. We again use a one-year window to estimate the parameter and 
+### compute VaR for the next day. Then we use a rolling window approach to compute all the daily 99% VaR from Sep 20, 2021 
+###to Sep 16, 2022. The first estimation window is Sep 18, 2020 - Sep 17, 2021 (Sep 18&19, 2021 are holidays).
+
+par(mfrow=c(1,1))
+
+tesla_prices <- tesla_filter$Adj.Close
+n=length(tesla_prices)-1
+tesla_lr <-log(tesla_prices[1:n]/tesla_prices[2:(n+1)])
+
+
+# Define the first estimation window
+trainind <-(1:n)[as.Date(tesla_filter[1:n,1],"%b %d, %Y") <= "2021-12-31"] ### All data before 2022
+testind <- (1:n)[as.Date(tesla_filter[1:n,1],"%b %d, %Y") > "2021-12-31"]
+ntrain=length(trainind) ## 1061 days of data roughly a 4 year
+end = trainind[length(trainind)]
+dt=1/ntrain # since we use one-year estimation window
+
+alpha=0.01
+VaR=rep(0,start-1)
+
+
+Nsim=1000
+set.seed(4518)
+count = 1
+for(i in 1:length(testind)){
+  tesla_train_lr <-tesla_lr[trainind]
+  teslastdFit<-stdFit(tesla_train_lr)$par
+  v= teslastdFit["mean"]/dt; sigma=teslastdFit["sd"]/sqrt(dt); nu=teslastdFit["nu"]
+  Z=rt(Nsim,df=nu)
+  R=v*dt+sigma*sqrt(dt)*Z
+  VaR[i]=-quantile(R,probs=alpha)
+  trainind = seq(trainind[1]+1, testind[count])
+  print(head(trainind))
+  print(tail(trainind))
+  print(length(trainind))
+  count= count + 1
+}
+
+combinedVaR=c(VaR,rep(NA,ntrain))
+plot(rev(tesla_lr), type="l", ylim=c(-max(VaR),max(tesla_lr)))
+lines(-rev(combinedVaR), col=2)
+
+
+
 
