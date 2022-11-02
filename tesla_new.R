@@ -1,31 +1,18 @@
-########### Preparation of tesla data
 library(dplyr)
-library(fGarch)
 
-setwd("C:/Users/neo qi xiang/Desktop/sim_finance/project")
+
+setwd("/home/nic/repos/group")
+set.seed(4518)
+########### Preparation of tesla data
+
 tesla = read.csv("TSLA.csv")
 tesla_filter <- subset(tesla, select = c('Date', 'Adj.Close'))
 tesla_filter$Date <- as.Date(tesla_filter$Date)
 tesla_filter$year <- format(tesla_filter$Date, format = "%Y")
+tesla_filter = tesla_filter %>% filter(Date <= as.Date('2022-01-12'))
+tesla_filter = tesla_filter %>% filter(Date >= as.Date('2021-01-12'))
 
-tesla_train <- tesla_filter %>% filter(year <= 2021)
-tesla_test <- tesla_filter %>% filter(year > 2021)
-
-
-dt=1/252
-TESLAprices <-as.numeric(as.vector(tesla_train$Adj.Close))
-TESLAprices <- TESLAprices[!is.na(TESLAprices)]
-n0 =length(TESLAprices)
-
-TESLAlogprices <-log(TESLAprices)
-
-TESLAlogreturns <- TESLAlogprices[2:n0]- TESLAlogprices[1:(n0-1)]
-v=mean(TESLAlogreturns)/dt
-sigma=sd(TESLAlogreturns)/sqrt(dt)
-
-
-
-####### Brownian motion #############
+tesla_filter$actual_close = tesla_filter$Adj.Close * 3
 
 Binomtreefit<-function(v,sigma,Deltat,approx=TRUE){
   if(approx){
@@ -40,40 +27,60 @@ Binomtreefit<-function(v,sigma,Deltat,approx=TRUE){
   list(p=p,u=u,d=d)
 }
 
-
-new_dt = 1/252
-v=mean(TESLAlogreturns)/new_dt
-sigma=sd(TESLAlogreturns)/sqrt(new_dt)
-
-
-ApproxResult<-Binomtreefit(v,sigma,new_dt)
-ApproxResult
-
-
-
-NonApproxResult<-Binomtreefit(v,sigma,new_dt,FALSE)
-NonApproxResult
-
-
-
-p=ApproxResult$p; u=ApproxResult$u; d=ApproxResult$d;
-SimBinomTree<-function(Nsim,S0,u,d,p,Deltat,T){
+SimBinomTree<-function(N,S0,u,d,p,Deltat,T){
   m=T/Deltat # number of periods
-  S=matrix(S0,nrow=Nsim,ncol=m+1)
-  for(i in 1:Nsim){
+  S=matrix(S0,nrow=N,ncol=m+1)
+  for(i in 1:N){
     Z<-rbinom(m,1,p)*(u-d)+d
     S[i,2:(m+1)]=S0*cumprod(Z)
   }
   S
 }
 
-S0=100;T= 1
-set.seed(4518)
-binomial_tree<-SimBinomTree(100,S0,u,d,p,new_dt,T)
+n = length(tesla_filter$actual_close) -1
+tesla_lr <-  log(tesla_filter$actual_close[2:n+1]) - log(tesla_filter$actual_close[1:n])
 
+dt=1/252
+v=mean(tesla_lr)
+sigma=sd(tesla_lr)
+v; sigma
 
+# approx
+udp<-Binomtreefit(v,sigma,dt)
 
-Visualize<-function(S){
+u=udp$u; d=udp$d; p=udp$p
+T=1; dt=1/252
+N=10000
+S0=tesla_filter$actual_close[1]
+tesla_sbt <-SimBinomTree(N,S0,u,d,p,dt,T)
+tail(tesla_filter)
+# as.Date('2022-10-13') - as.Date('2023-01-12')
+
+# exact
+udp<-Binomtreefit(v,sigma,dt,F)
+
+u=udp$u; d=udp$d; p=udp$p
+T=1; dt=1/252
+N=10000
+S0=1106.22 #tesla_filter$actual_close[1]
+tesla_esbt <-SimBinomTree(N,S0,u,d,p,dt,T)
+
+# gbm exact
+SimGBMexact<-function(N,S0,v,sigma,Deltat,T){
+  m=T/Deltat # number of periods
+  S=matrix(S0,nrow=N,ncol=m+1)
+  for(i in 1:N){
+    Z<-rnorm(m)
+    for(j in 2:(m+1)){
+      S[i,j]=S[i,j-1]*exp(v*Deltat+sigma*sqrt(Deltat)*Z[j-1])
+    }
+  }
+  S
+}
+
+tesla_egbm<-SimGBMexact(N,S0,v,sigma,dt,T)
+
+visualize<-function(S){
   # endindex=ncol(S)
   minS=min(S);maxS=max(S) # the y-limits of the plot
   noS<-nrow(S)
@@ -85,49 +92,41 @@ Visualize<-function(S){
     }
   }
 }
-Visualize(binomial_tree)
 
-v;sigma
+n0=length(tesla_filter$actual_close)
+histdata<-matrix(rep(tesla_filter,N),ncol=n0,byrow=T)
+wholedata<-cbind(histdata,tesla_egbm)
+visualize(wholedata)
 
-# 1) to find out date dt, T how to simulate 3 month 6 months and 12 months
+visualize(tesla_egbm)
+dim(tesla_egbm)
+mean(tesla_egbm[,253])
+sd(tesla_egbm[,253])
+quantile(tesla_egbm[,253], .05)
+quantile(tesla_egbm[,253], .95)
 
-####### Geometric brownian motion
-
-SimGBMexact<-function(Nsim,S0,v,sigma,Deltat,T){
-  m=T/Deltat # number of periods
-  S=matrix(S0,nrow=Nsim,ncol=m+1)
-  for(i in 1:Nsim){
-    Z<-rnorm(m)
-    for(j in 2:(m+1)){
-      S[i,j]=S[i,j-1]*exp(v*Deltat+sigma*sqrt(Deltat)*Z[j-1])
-    }
-  }
-  S
-}
-
-dt =  1/252
-v=mean(TESLAlogreturns)/dt
-sigma=sd(TESLAlogreturns)/sqrt(dt)
-
-n0 = length(tesla_train$Adj.Close)
+visualize(tesla_sbt)
+dim(tesla_sbt)
+mean(tesla_sbt[,253])
+sd(tesla_sbt[,253])
+quantile(tesla_sbt[,253], .05)
+quantile(tesla_sbt[,253], .95)
 
 
-St= tesla_train$Adj.Close[n0]
-Nsim=10
-set.seed(4518)
-SimTesla<-SimGBMexact(Nsim,St,v,sigma,dt,1)
-Histdata<-matrix(rep(tesla_train$Adj.Close,Nsim),ncol=n0,byrow=T)
-wholedata<-cbind(Histdata,SimTesla)
-Visualize(wholedata)
-
+visualize(tesla_esbt)
+dim(tesla_esbt)
+mean(tesla_esbt[,253])
+sd(tesla_esbt[,253])
+quantile(tesla_esbt[,253], .05)
+quantile(tesla_esbt[,253], .95)
 
 ####### Antithetic variates 
 
-SimGBMexactAV<-function(Nsim,S0,v,sigma,Deltat,T,collate=FALSE){
+SimGBMexactAV<-function(N,S0,v,sigma,Deltat,T,collate=FALSE){
   m=T/Deltat # number of periods
-  S=matrix(S0,nrow=Nsim,ncol=m+1)
-  Stilde=matrix(S0,nrow=Nsim,ncol=m+1)
-  for(i in 1:Nsim){
+  S=matrix(S0,nrow=N,ncol=m+1)
+  Stilde=matrix(S0,nrow=N,ncol=m+1)
+  for(i in 1:N){
     Z<-rnorm(m)
     for(j in 2:(m+1)){
       S[i,j]=S[i,j-1]*exp(v*Deltat+sigma*sqrt(Deltat)*Z[j-1])
@@ -135,8 +134,8 @@ SimGBMexactAV<-function(Nsim,S0,v,sigma,Deltat,T,collate=FALSE){
     }
   }
   if(collate){
-    out=matrix(0,2*Nsim,ncol=m+1)
-    for(i in 1:Nsim){
+    out=matrix(0,2*N,ncol=m+1)
+    for(i in 1:N){
       out[(2*i-1),]=S[i,]
       out[2*i,]=Stilde[i,]
     }
@@ -144,99 +143,43 @@ SimGBMexactAV<-function(Nsim,S0,v,sigma,Deltat,T,collate=FALSE){
   } else{return(rbind(S,Stilde))}
 }
 
+tesla_eav<-SimGBMexactAV(N,S0,v,sigma,dt,1,collate=TRUE)
+visualize(tesla_eav)
 
-
-SimTeslaAV<-SimGBMexactAV(Nsim,St,v,sigma,dt,1,collate=TRUE)
-Histdata<-matrix(rep(tesla_train$Adj.Close,2*Nsim),ncol=n0,byrow=T)
-wholedataAV <-cbind(Histdata,SimTeslaAV)
-Visualize(wholedataAV)
-
-
-
-
-####### stratified sampling
-
-SimGBM1shootSS<-function(StratraNo,NsimS,S0,v,sigma,T){
-  V=runif(NsimS)/StratraNo
-  for(i in 2:StratraNo){
-    V=c(V,(i-1+runif(NsimS))/StratraNo)
-  }
-  Z=qnorm(V)
-  ST=S0*exp(v*T+sigma*sqrt(T)*Z)
-  ST
+print_stats = function(mtx){
+  m=mean(mtx[,253])
+  s=sd(mtx[,253])
+  q5=quantile(mtx[,253], .05)
+  q95=quantile(mtx[,253], .95)
+  return(c(m,s,q5,q95))
 }
 
-
-SimGBM1shoot<-function(Nsim,S0,v,sigma,T){
-  Z=rnorm(Nsim)
-  ST=S0*exp(v*T+sigma*sqrt(T)*Z)
-  ST
-}
-
-SimGBM1shoot(Nsim, S0,v, sigma, T)
+print_stats(tesla_eav)
 
 
-
-####### Monte Carlo
-# Parameter estimation
-n=length(TESLAprices)-1
-dt=1/n
-
-TESLAstdFit<-stdFit(TESLAlogreturns)$par
-v=TESLAstdFit["mean"]/dt; sigma=TESLAstdFit["sd"]/sqrt(dt); nu=TESLAstdFit["nu"]
-TESLAstdLR<-(TESLAlogreturns-v*dt)/(sigma*sqrt(dt))
-
-# Q-Q Plots (Benchmarking against Normal fitting)
-par(mfrow=c(1,2))
-qqplot(qt(ppoints(500),df=nu),TESLAstdLR,main="Q-Q plot for t(6.471)")
-qqline(TESLAstdLR, distribution = function(p) qt(p,df=nu), probs=c(0.1, 0.6), col=2)
-mtext("qqline(*, dist = qt(., df=6.471), prob = c(0.1, 0.6))")
-
-qqnorm(TESLAlogreturns, pch = 1, frame = FALSE)
-qqline(TESLAlogreturns, col = 2, lwd = 2)
-
-# Recover Log-returns
-R=v*dt+sigma*sqrt(dt)*TESLAlogreturns
-matrixR=matrix(R,ncol=10) # Group ten daily log-returns in one row
-R10=apply(matrixR,1,sum) # Calculate 10-day log-returns
-
-# Compute VaR and CVaR
-alpha=0.01
-VaR=-quantile(R10,probs=alpha); VaR
-
-CVaR=VaR+1/(alpha*length(R10))*sum((-R10-VaR)[-R10-VaR>0]); CVaR
-
-
-#### Suppose that we collect two-year data of DJI. We again use a one-year window to estimate the parameter and 
-### compute VaR for the next day. Then we use a rolling window approach to compute all the daily 99% VaR from Sep 20, 2021 
-###to Sep 16, 2022. The first estimation window is Sep 18, 2020 - Sep 17, 2021 (Sep 18&19, 2021 are holidays).
 
 par(mfrow=c(1,1))
 
-tesla_prices <- tesla_filter$Adj.Close
-n=length(tesla_prices)-1
-tesla_lr <-log(tesla_prices[1:n]/tesla_prices[2:(n+1)])
-
-
 # Define the first estimation window
-trainind <-(1:n)[as.Date(tesla_filter[1:n,1],"%b %d, %Y") <= "2021-12-31"] ### All data before 2022
-testind <- (1:n)[as.Date(tesla_filter[1:n,1],"%b %d, %Y") > "2021-12-31"]
+trainind <-(1:n)[as.Date(tesla_filter[1:n,1],"%b %d, %Y") <= "2022-01-12"] ### All data before 2022
+trainind <-(1:n)[as.Date(tesla_filter[1:n,1],"%b %d, %Y") > "2021-01-12"]
+testind <- (1:n)[as.Date(tesla_filter[1:n,1],"%b %d, %Y") > "2022-01-12"]
 ntrain=length(trainind) ## 1061 days of data roughly a 4 year
 end = trainind[length(trainind)]
 dt=1/ntrain # since we use one-year estimation window
 
+start=trainind[1]
 alpha=0.01
 VaR=rep(0,start-1)
 
 
-Nsim=1000
-set.seed(4518)
+
 count = 1
 for(i in 1:length(testind)){
   tesla_train_lr <-tesla_lr[trainind]
   teslastdFit<-stdFit(tesla_train_lr)$par
   v= teslastdFit["mean"]/dt; sigma=teslastdFit["sd"]/sqrt(dt); nu=teslastdFit["nu"]
-  Z=rt(Nsim,df=nu)
+  Z=rt(N,df=nu)
   R=v*dt+sigma*sqrt(dt)*Z
   VaR[i]=-quantile(R,probs=alpha)
   trainind = seq(trainind[1]+1, testind[count])
@@ -249,7 +192,3 @@ for(i in 1:length(testind)){
 combinedVaR=c(VaR,rep(NA,ntrain))
 plot(rev(tesla_lr), type="l", ylim=c(-max(VaR),max(tesla_lr)))
 lines(-rev(combinedVaR), col=2)
-
-
-
-
