@@ -1,7 +1,7 @@
 library(dplyr)
+library(fGarch)
 
-
-setwd("/home/nic/repos/group")
+setwd("C:/Users/neo qi xiang/Desktop/sim_finance/sim_finance_project")
 set.seed(4518)
 ########### Preparation of tesla data
 
@@ -92,11 +92,11 @@ visualize<-function(S){
     }
   }
 }
-
-n0=length(tesla_filter$actual_close)
-histdata<-matrix(rep(tesla_filter,N),ncol=n0,byrow=T)
-wholedata<-cbind(histdata,tesla_egbm)
-visualize(wholedata)
+# 
+# n0=length(tesla_filter$actual_close)
+# histdata<-matrix(rep(tesla_filter,N),ncol=n0,byrow=T)
+# #wholedata<-cbind(histdata,tesla_egbm)
+# visualize(wholedata)
 
 visualize(tesla_egbm)
 dim(tesla_egbm)
@@ -160,17 +160,33 @@ print_stats(tesla_eav)
 
 par(mfrow=c(1,1))
 
+
+
+tesla = read.csv("TSLA.csv")
+tesla_var <- subset(tesla, select = c('Date', 'Adj.Close'))
+tesla_var$Date <- as.Date(tesla_var$Date)
+tesla_var$year <- format(tesla_var$Date, format = "%Y")
+tesla_var$actual_close = tesla_var$Adj.Close * 3
+
+
+n = length(tesla_var$actual_close) -1
+tesla_lr <- log(tesla_var$actual_close[2:n+1]) - log(tesla_var$actual_close[1:n])
+
+
+
+
 # Define the first estimation window
-trainind <-(1:n)[as.Date(tesla_filter[1:n,1],"%b %d, %Y") <= "2022-01-12"] ### All data before 2022
-trainind <-(1:n)[as.Date(tesla_filter[1:n,1],"%b %d, %Y") > "2021-01-12"]
-testind <- (1:n)[as.Date(tesla_filter[1:n,1],"%b %d, %Y") > "2022-01-12"]
+trainind <-(1:n)[as.Date(tesla_var[1:n,1],"%b %d, %Y") <= "2022-01-12" & 
+                 as.Date(tesla_var[1:n,1],"%b %d, %Y") > "2021-01-12"] ### All data before 2022
+
+testind <- (1:n)[as.Date(tesla_var[1:n,1],"%b %d, %Y") > "2022-01-12"]
 ntrain=length(trainind) ## 1061 days of data roughly a 4 year
 end = trainind[length(trainind)]
 dt=1/ntrain # since we use one-year estimation window
 
 start=trainind[1]
 alpha=0.01
-VaR=rep(0,start-1)
+VaR=rep(0,length(testind)-1)
 
 
 
@@ -179,7 +195,7 @@ for(i in 1:length(testind)){
   tesla_train_lr <-tesla_lr[trainind]
   teslastdFit<-stdFit(tesla_train_lr)$par
   v= teslastdFit["mean"]/dt; sigma=teslastdFit["sd"]/sqrt(dt); nu=teslastdFit["nu"]
-  Z=rt(N,df=nu)
+  Z=rt(10000,df=nu)
   R=v*dt+sigma*sqrt(dt)*Z
   VaR[i]=-quantile(R,probs=alpha)
   trainind = seq(trainind[1]+1, testind[count])
@@ -189,7 +205,9 @@ for(i in 1:length(testind)){
   count= count + 1
 }
 
-combinedVaR=c(VaR,rep(NA,ntrain))
-plot(rev(tesla_lr), type="l", ylim=c(-max(VaR),max(tesla_lr)))
-lines(-rev(combinedVaR), col=2)
+
+
+combinedVaR=c(rep(NA,253),VaR)
+plot(tail(tesla_lr,441), type="l", ylim=c(-max(VaR),max(tail(tesla_lr,441))))
+lines(-combinedVaR, col=2)
 
