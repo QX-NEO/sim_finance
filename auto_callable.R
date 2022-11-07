@@ -10,10 +10,10 @@ tesla_filter$year <- format(tesla_filter$Date, format = "%Y")
 tesla_filter$actual_close <- tesla_filter$Adj.Close*3
 
 
-tesla_filter<- tesla_filter %>% filter(Date >= '2021-01-12') %>% filter(Date <'2022-01-12')
+tesla_filter<- tesla_filter %>% filter(Date > '2021-01-12') %>% filter(Date <='2022-01-12')
 n = length(tesla_filter$Adj.Close)-1
 tesla_lr <-  log(tesla_filter$actual_close[2:n+1]) - log(tesla_filter$actual_close[1:n])
-
+length(tesla_lr)
 
 
 
@@ -25,52 +25,51 @@ tesla_lr <-  log(tesla_filter$actual_close[2:n+1]) - log(tesla_filter$actual_clo
 
 updateLR <- function(newS0, old_LR){
   new_return <- log(news0) - old_LR[length(old_LR)]
-  return(c(old_LR[2:length(old_LR)],new_return ))
+  return(c(old_LR[2:length(old_LR)],new_return))
 }
 
 
 
 generate_vsigma <-  function(logLR){
   values<- c()
-  values$v = mean(logLR)
-  values$sigma = sd(logLR)
+  values$v = mean(logLR)/(1/252)
+  values$sigma = sd(logLR)/sqrt(1/252)
   
   return(values)
 }
 
 
-gbm_s1 <- function(s0,v , sigma){ ## 252
+gbm_s1 <- function(s0, v, sigma, Deltat){ ## 252
   z = rnorm(1)
-  return(s0 *exp(v+sigma*z))
+  return(s0 *exp(v*Deltat+sigma*sqrt(Deltat)*z))
 }
 
 
 
 sim <- c()
 tesla_lr_gbm <- tesla_lr
-for(i in 1:252){
-  if(i ==1){
-    news0 <- tesla_lr_gbm[n]
-    val <- generate_vsigma(tesla_lr_gbm)
-    news0 <- gbm_s1(news0,val$v, val$sigma)
-    print(news0)
-    sim <- c(sim, news0)
-    tesla_lr_gbm <- updateLR(newS0,old_LR = tesla_lr_gbm)
-    
-  }
-  else{
-    val <- generate_vsigma(tesla_lr_gbm)
-    news0 <- gbm_s1(news0,val$v, val$sigma)
-    sim <- c(sim, news0)
-    tesla_lr_gbm <- updateLR(newS0,old_LR = tesla_lr_gbm)
-    print(news0)
-    print(head(tesla_lr_gbm))
-    print(tail(tesla_lr_gbm))
 
-  }
-  
+
+# Initialize 
+news0 <- tesla_filter$actual_close[n+1]
+val <- generate_vsigma(tesla_lr_gbm)
+news0 <- gbm_s1(news0,val$v, val$sigma, 1/252)
+sim <- c(sim, news0)
+tesla_lr_gbm <- updateLR(newS0,old_LR = tesla_lr_gbm)
+
+
+
+for(i in 2:252){
+
+  val <- generate_vsigma(tesla_lr_gbm)
+  print(tesla_lr_gbm)
+  news0 <- gbm_s1(news0,val$v, val$sigma,1/252)
+  sim <- c(sim, news0)
+  tesla_lr_gbm <- updateLR(newS0,old_LR = tesla_lr_gbm)
+  print(val)
 }
 print(sim)
+
 
 
 
